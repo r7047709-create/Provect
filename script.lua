@@ -1,83 +1,58 @@
 --[[
-    SCRIPT: Gerador de Anomalias Aleatórias
+    SCRIPT: Sistema de Missões Flutuantes (Ultra Otimizado para FPS)
     ONDE COLOCAR: ServerScriptService
 --]]
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
 
--- Configure aqui os objetos que podem virar anomalias (coloque-os em uma pasta na Workspace chamada "ObjetosDoHospital")
-local pastaObjetos = workspace:FindFirstChild("ObjetosDoHospital")
+local placaOriginal = ServerStorage:FindFirstChild("PlacaMissao")
 
--- Tempo em segundos entre as tentativas de gerar uma anomalia
-local TEMPO_CHECAGEM = 15 
--- Chance de acontecer uma anomalia (0 a 100)
-local CHANCE_ANOMALIA = 60 
+local tarefas = {
+	"Atender na Recepção 📋",
+	"Checar Anomalias ⚠️",
+	"Dar Remédio ao Paciente 💊",
+	"Olhar Câmeras 📹"
+}
 
-if not pastaObjetos then
-	warn("AVISO: Crie uma pasta chamada 'ObjetosDoHospital' na Workspace e coloque os objetos dentro!")
+if not placaOriginal then
+	warn("ERRO: Coloque o BillboardGui com o nome 'PlacaMissao' no ServerStorage!")
 	return
 end
 
-local objetosDisponiveis = pastaObjetos:GetChildren()
+-- Deixa a placa invisível por padrão no armazenamento para economizar memória
+placaOriginal.Enabled = true
 
--- Função para fazer um objeto sumir (Anomalia do Tipo: Sumiço)
-local function sumirObjeto(objeto)
-	if objeto:IsA("BasePart") then
-		objeto.Transparency = 1
-		objeto.CanCollide = false
-	elseif objeto:IsA("Model") then
-		for _, filho in ipairs(objeto:GetDescendants()) do
-			if filho:IsA("BasePart") then
-				filho.Transparency = 1
-				filho.CanCollide = false
-			end
+local function gerenciarMissao(player, textLabel)
+	while player and player.Parent and player:IsDescendantOf(Players) do
+		-- Só atualiza se o personagem existir e estiver vivo no mapa
+		local character = player.Character
+		if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
+			local missaoSorteada = tarefas[math.random(1, #tarefas)]
+			textLabel.Text = missaoSorteada
 		end
+		task.wait(25) -- Aumentado para 25s para poupar processamento e dar mais FPS
 	end
-	objeto:SetAttribute("AnomaliaAtiva", true)
-	objeto:SetAttribute("TipoAnomalia", "Sumico")
-	print("Anomalia: Um objeto sumiu no hospital! -> " .. objeto.Name)
 end
 
--- Função para fazer o objeto crescer (Anomalia do Tipo: Tamanho)
-local function crescerObjeto(objeto)
-	if objeto:IsA("BasePart") then
-		local novaEscala = objeto.Size * 2
-		local tween = TweenService:Create(objeto, TweenInfo.new(1), {Size = novaEscala})
-		tween:Play()
-	elseif objeto:IsA("Model") then
-		-- Para modelos inteiros, altera a escala do Model
-		objeto:ScaleTo(objeto:GetScale() * 2)
-	end
-	objeto:SetAttribute("AnomaliaAtiva", true)
-	objeto:SetAttribute("TipoAnomalia", "Tamanho")
-	print("Anomalia: Um objeto cresceu misteriosamente! -> " .. objeto.Name)
-end
-
--- Loop principal que gera o mistério no mapa
-while true do
-	task.wait(TEMPO_CHECAGEM)
-	
-	-- Sorteia se vai acontecer uma anomalia nesta rodada
-	if math.random(1, 100) <= CHANCE_ANOMALIA then
-		-- Filtra objetos que já não estejam bugados
-		local possiveisAlvos = {}
-		for _, obj in ipairs(objetosDisponiveis) do
-			if not obj:GetAttribute("AnomaliaAtiva") then
-				table.insert(possiveisAlvos, obj)
-			end
-		end
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		local head = character:WaitForChild("Head", 5)
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
 		
-		-- Se tiver algum objeto normal, escolhe um e aplica o susto
-		if #possiveisAlvos > 0 then
-			local objetoEscolhido = possiveisAlvos[math.random(1, #possiveisAlvos)]
-			local tipoSorteado = math.random(1, 2)
+		if head and humanoidRootPart then
+			local novaPlaca = placaOriginal:Clone()
+			local textLabel = novaPlaca:FindFirstChildOfClass("TextLabel")
 			
-			if tipoSorteado == 1 then
-				sumirObjeto(objetoEscolhido)
-			else
-				crescerObjeto(objetoEscolhido)
+			-- Otimização gráfica: Reduz a distância que os outros conseguem ver o texto (evita lag)
+			novaPlaca.MaxDistance = 60 
+			novaPlaca.Adornee = humanoidRootPart
+			novaPlaca.Parent = head
+			
+			if textLabel then
+				task.spawn(gerenciarMissao, player, textLabel)
 			end
 		end
 	end
-end
+end)
+	
