@@ -1,167 +1,90 @@
 --[[
-    SCRIPT: Sistema de Missões, Velocidade, Guia Visual e Proteção (Completo)
+    SCRIPT: Modificador Físico Persistente + Monitor + Anti-Cheat Ativo
     ONDE COLOCAR: ServerScriptService (Script Normal)
 --]]
 
 local Players = game:GetService("Players")
-local ServerStorage = game:GetService("ServerStorage")
-local Workspace = game:GetService("Workspace")
+local Teams = game:GetService("Teams")
 
---------------------------------------------------------------------------------
--- 🛡️ CONFIGURAÇÃO DE SEGURANÇA (LISTA NEGRA)
---------------------------------------------------------------------------------
--- Coloque aqui o NOME EXATO dos jogadores que você quer banir do seu mapa
-local listaNegra = {
-	["NomeDoJogadorBanido1"] = true,
-	["NomeDoJogadorBanido2"] = true,
-}
+-- Configurações globais (Use variáveis locais fixas para performance)
+local VELOCIDADE_PERMITIDA = 20
+local FORCA_PULO_PERMITIDA = 70
+local MARGEM_ERRO = 6 -- Tolerância para evitar expulsões por lag (ping alto)
 
---------------------------------------------------------------------------------
--- 📋 CONFIGURAÇÕES DO SISTEMA DE MISSÕES
---------------------------------------------------------------------------------
-local placaOriginal = ServerStorage:FindFirstChild("PlacaMissao")
-local pastaLocais = Workspace:FindFirstChild("LocaisDasMissoes")
-
-local tarefas = {
-	[1] = "Atender na Recepção 📋",
-	[2] = "Checar Anomalias ⚠️",
-	[3] = "Dar Remédio ao Paciente 💊",
-	[4] = "Olhar Câmeras 📹"
-}
-local totalTarefas = #tarefas
-
--- Verificação de segurança no arranque do servidor
-if not placaOriginal then
-	warn("ERRO CRÍTICO: 'PlacaMissao' não foi encontrada no ServerStorage!")
-	return
+-- Função otimizada para listar jogadores e suas respectivas equipes
+local function atualizarEmostrarDados()
+	print("\n--- 📋 [ATUALIZAÇÃO EM TEMPO REAL] JOGADORES E EQUIPES ---")
+	local listaPlayers = Players:GetPlayers()
+	
+	if #listaPlayers == 0 then
+		print("Nenhum jogador no servidor no momento.")
+	else
+		for _, player in ipairs(listaPlayers) do
+			local nomeEquipe = player.Team and player.Team.Name or "Sem Equipe ❌"
+			print("👉 Jogador: " .. player.Name .. " | Equipe: " .. nomeEquipe)
+		end
+	end
+	print("---------------------------------------------------------\n")
 end
 
-if not pastaLocais then
-	warn("ERRO CRÍTICO: Pasta 'LocaisDasMissoes' não foi encontrada no Workspace!")
-	return
-end
-
---------------------------------------------------------------------------------
--- ⚡ FUNÇÕES DO SISTEMA (MECÂNICAS E OTIMIZAÇÃO)
---------------------------------------------------------------------------------
-
--- Remove a guia antiga limpando o cache de memória
-local function limparGuia(character)
-	if not character then return end
-	local antigaGuia = character:FindFirstChild("GuiaMissao")
-	if antigaGuia then 
-		antigaGuia:Destroy() 
+-- Aplica os atributos físicos diretamente no Humanoid
+local function aplicarAtributosFisicos(character)
+	local humanoid = character:WaitForChild("Humanoid", 5)
+	
+	if humanoid then
+		humanoid.WalkSpeed = VELOCIDADE_PERMITIDA         
+		humanoid.UseJumpPower = true   
+		humanoid.JumpPower = FORCA_PULO_PERMITIDA         
+		humanoid.JumpHeight = 10        
 	end
 end
 
--- Atualiza o feixe de luz (Beam) em tempo real
-local function atualizarGuia(character, localAlvo)
-	limparGuia(character)
-
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp or not localAlvo then return end
-
-	local pastaGuia = Instance.new("Folder")
-	pastaGuia.Name = "GuiaMissao"
-	
-	local attJogador = Instance.new("Attachment")
-	attJogador.Name = "PontoJogador"
-	attJogador.Parent = hrp
-
-	local attAlvo = Instance.new("Attachment")
-	attAlvo.Name = "PontoAlvo"
-	attAlvo.Parent = localAlvo
-
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = attJogador
-	beam.Attachment1 = attAlvo
-	beam.Width0 = 0.5
-	beam.Width1 = 0.5
-	beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 128)) -- Verde Neon de Alta Visibilidade
-	beam.LightEmission = 0.8
-	beam.FaceCamera = true
-	beam.TextureSpeed = 1.5
-	beam.Parent = pastaGuia
-	
-	pastaGuia.Parent = character
-end
-
--- Loop contínuo gerenciador de missões
-local function gerenciarMissao(player, textLabel, character)
+-- Monitoramento do lado do servidor para evitar trapaças/exploits de velocidade e pulo
+local function iniciarAntiCheat(player, character)
 	local humanoid = character:WaitForChild("Humanoid", 5)
 	if not humanoid then return end
-	
-	local conexaoMorte
-	conexaoMorte = humanoid.Died:Connect(function()
-		limparGuia(character)
-		if conexaoMorte then 
-			conexaoMorte:Disconnect() 
-			conexaoMorte = nil
+
+	task.spawn(function()
+		-- O loop roda de forma leve e contínua enquanto o personagem estiver vivo no mapa
+		while player and player.Parent and character and character.Parent and humanoid.Health > 0 do
+			task.wait(1) -- Varredura a cada 1 segundo (não pesa nada no servidor)
+			
+			-- Se um executor externo alterar os valores locais, o servidor detecta a diferença física
+			if humanoid.WalkSpeed > (VELOCIDADE_PERMITIDA + MARGEM_ERRO) then
+				player:Kick("Banido do Servidor: Modificação ilegal de velocidade detectada (SpeedHack).")
+				break
+			end
+			
+			if humanoid.JumpPower > (FORCA_PULO_PERMITIDA + MARGEM_ERRO) then
+				player:Kick("Banido do Servidor: Modificação ilegal de pulo detectada (JumpHack).")
+				break
+			end
 		end
 	end)
-
-	-- Mantém o sistema rodando de forma ativa e sem janelas/abas
-	while player and player.Parent and character and character.Parent and humanoid.Health > 0 do
-		local indiceSorteado = math.random(1, totalTarefas)
-		local missaoSorteada = tarefas[indiceSorteado]
-		
-		textLabel.Text = missaoSorteada
-		
-		local localAlvo = pastaLocais:FindFirstChild(missaoSorteada)
-		if localAlvo then
-			atualizarGuia(character, localAlvo)
-		else
-			limparGuia(character)
-		end
-		
-		task.wait(25) -- Tempo de espera entre missões
-	end
-	
-	if conexaoMorte then 
-		conexaoMorte:Disconnect() 
-		conexaoMorte = nil
-	end
 end
 
--- Configura os atributos do boneco (Velocidade e Placa)
-local function inicializarPersonagem(player, character)
-	local head = character:WaitForChild("Head", 5)
-	local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
-	local humanoid = character:WaitForChild("Humanoid", 5)
-	
-	if head and humanoidRootPart and humanoid then
-		humanoid.WalkSpeed = 20 -- Deixa o boneco rápido (Velocidade 20)
-		
-		local novaPlaca = placaOriginal:Clone()
-		local textLabel = novaPlaca:FindFirstChildOfClass("TextLabel")
-		
-		novaPlaca.MaxDistance = 50 -- Reduzido para economizar renderização e FPS
-		novaPlaca.Adornee = humanoidRootPart
-		novaPlaca.Parent = head
-		
-		if textLabel then
-			task.spawn(gerenciarMissao, player, textLabel, character)
-		end
-	end
-end
-
---------------------------------------------------------------------------------
--- 🔌 CONEXÕES GLOBAIS DE ENTRADA DO SERVIDOR
---------------------------------------------------------------------------------
+-- Gerenciamento de eventos de entrada dos jogadores
 Players.PlayerAdded:Connect(function(player)
-	-- 1. PROTEÇÃO CONTRA LISTA NEGRA: Executa o banimento imediatamente na entrada
-	if listaNegra[player.Name] then
-		player:Kick("Você foi banido permanentemente deste mapa.")
-		return
-	end
-
-	-- 2. Inicializa o personagem se ele já carregou
-	if player.Character then
-		task.spawn(inicializarPersonagem, player, player.Character)
-	end
+	-- Atualiza a listagem de equipes assim que o jogador entra
+	atualizarEmostrarDados()
 	
-	-- 3. Configura futuros respawns do jogador
+	-- Monitora se o jogador trocar de equipe no meio da partida
+	player:GetPropertyChangedSignal("Team"):Connect(atualizarEmostrarDados)
+	
+	-- Garante que quando o jogador nascer (ou renascer após morrer), os atributos sejam reaplicados
 	player.CharacterAdded:Connect(function(character)
-		inicializarPersonagem(player, character)
+		aplicarAtributosFisicos(character)
+		iniciarAntiCheat(player, character)
 	end)
+	
+	-- Caso o personagem já tenha carregado antes do script terminar de rodar
+	if player.Character then
+		task.spawn(aplicarAtributosFisicos, player.Character)
+		task.spawn(iniciarAntiCheat, player, player.Character)
+	end
+end)
+
+-- Atualiza a listagem de equipes quando alguém sai do jogo
+Players.PlayerRemoving:Connect(function()
+	task.defer(atualizarEmostrarDados)
 end)
